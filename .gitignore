@@ -16,17 +16,9 @@ dist/
 build/
 *.egg
 
-# Data
-data/raw/
-data/processed/
-data/recordings/
-
 # Logs
 logs/
 *.log
-
-# Models
-models/
 
 # IDE
 .vscode/
@@ -39,5 +31,5 @@ models/
 .DS_Store
 Thumbs.db
 
-plans/scraper-module-design.md
+# Plans
 plans/

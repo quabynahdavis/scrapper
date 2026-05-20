@@ -231,6 +231,13 @@ def settings(verbose: bool) -> None:
     )
 
 
+@cli.command()
+def shell() -> None:
+    """Launch the interactive TUI (tab completion, history, settings)."""
+    from scrapper.shell import main as shell_main
+    shell_main()
+
+
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------

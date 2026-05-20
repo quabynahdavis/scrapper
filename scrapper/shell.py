@@ -368,34 +368,34 @@ class InteractiveShell:
                 f"{dur}, {size}  |  score: {r.score:.2f}{RESET}"
             )
 
-    def _cmd_download(self, args: str) -> None:
-        if not self.results:
-            _print_info("No cached results. Run 'search' first.")
-            return
-        if not args or not args.strip().isdigit():
-            _print_error("Usage: download <index_number>")
-            return
-        idx = int(args.strip()) - 1
-        if idx < 0 or idx >= len(self.results):
-            _print_error(f"Index out of range. Use 1–{len(self.results)}.")
-            return
-        result = self.results[idx]
-        _print_header(
-            f"⬇️  Downloading: {result.title}"
-            + (f" — {result.artist}" if result.artist else "")
-        )
-        dl = self.scraper.download_best([result])
-        if dl.success:
-            _print_success(f"Saved to: {dl.file_path}")
-        else:
-            _print_error(f"Download failed: {dl.error or 'Unknown error'}")
+    @staticmethod
+    def _parse_indices(raw: str, max_index: int) -> list[int]:
+        """Parse '1,2,3' or '1-5' or '1,3,5-7' into 0-based index list."""
+        indices: set[int] = set()
+        for part in raw.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                try:
+                    start_s, end_s = part.split("-", 1)
+                    start, end = int(start_s.strip()), int(end_s.strip())
+                    for i in range(start, end + 1):
+                        if 1 <= i <= max_index:
+                            indices.add(i - 1)
+                except ValueError:
+                    continue
+            else:
+                try:
+                    i = int(part)
+                    if 1 <= i <= max_index:
+                        indices.add(i - 1)
+                except ValueError:
+                    continue
+        return sorted(indices)
 
-    def _cmd_download_all(self, _: str = "") -> None:
-        if not self.results:
-            _print_info("No cached results. Run 'search' first.")
-            return
-        _print_header(f"⬇️  Downloading all {len(self.results)} results")
-        dl_results = self.scraper.download_all(self.results)
+    def _report_downloads(self, dl_results: list) -> None:
+        """Print download results in a consistent format."""
         success = sum(1 for d in dl_results if d.success)
         failed = sum(1 for d in dl_results if not d.success)
         for d in dl_results:
@@ -405,6 +405,55 @@ class InteractiveShell:
                 print(f"  {RED}❌{RESET} {d.result.title}: {d.error}")
         print()
         _print_success(f"{success} downloaded, {failed} failed")
+
+    def _cmd_download(self, args: str) -> None:
+        if not self.results:
+            _print_info("No cached results. Run 'search' first.")
+            return
+        if not args:
+            _print_error(
+                "Usage: download <index>    e.g. dl 1   dl 1,2,3   dl 1-5   dl 1,3,5-7"
+            )
+            return
+
+        indices = self._parse_indices(args.strip(), len(self.results))
+        if not indices:
+            _print_error(
+                f"Invalid index. Use numbers 1–{len(self.results)}. "
+                "Examples: dl 1   dl 1,2,3   dl 1-5   dl 1,3,5-7"
+            )
+            return
+
+        selected = [self.results[i] for i in indices]
+
+        if len(selected) == 1:
+            # Single download
+            result = selected[0]
+            _print_header(
+                f"⬇️  Downloading: {result.title}"
+                + (f" — {result.artist}" if result.artist else "")
+            )
+            dl = self.scraper.download_best([result])
+            if dl.success:
+                _print_success(f"Saved to: {dl.file_path}")
+            else:
+                _print_error(f"Download failed: {dl.error or 'Unknown error'}")
+        else:
+            # Multiple — download concurrently
+            names = ", ".join(
+                f"#{i+1}" for i in indices
+            )
+            _print_header(f"⬇️  Downloading {len(selected)} results ({names})")
+            dl_results = self.scraper.download_all(selected)
+            self._report_downloads(dl_results)
+
+    def _cmd_download_all(self, _: str = "") -> None:
+        if not self.results:
+            _print_info("No cached results. Run 'search' first.")
+            return
+        _print_header(f"⬇️  Downloading all {len(self.results)} results")
+        dl_results = self.scraper.download_all(self.results)
+        self._report_downloads(dl_results)
 
     def _cmd_settings(self, _: str = "") -> None:
         config = _load_user_config()
@@ -562,8 +611,8 @@ class InteractiveShell:
             f"    {'':>4}{DIM}Short form with source filter{RESET}\n"
             f"\n"
             f"  {BOLD}list{RESET}     {DIM}Show cached results{RESET}\n"
-            f"  {BOLD}download <n>{RESET}  {DIM}Download result #n{RESET}\n"
-            f"  {BOLD}download-all{RESET}  {DIM}Download all{RESET}\n"
+            f"  {BOLD}download <n>{RESET}  {DIM}dl 1  |  dl 1,2,3  |  dl 1-5  |  dl 1,3,5-7{RESET}\n"
+            f"  {BOLD}download-all{RESET}  {DIM}Download all cached results{RESET}\n"
             f"  {BOLD}settings{RESET}  {DIM}Open settings editor{RESET}\n"
             f"  {BOLD}sources{RESET}   {DIM}List sources{RESET}\n"
             f"  {BOLD}config{RESET}    {DIM}Show configuration{RESET}\n"

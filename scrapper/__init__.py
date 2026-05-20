@@ -1,5 +1,5 @@
 """
-sgpt-identifier — Song audio scraper.
+scrapper — Song audio scraper.
 
 Fetches MP3, MIDI, and other audio formats from multiple sources
 given a song name and optional artist.
@@ -239,7 +239,7 @@ class SongScraper:
             candidates = [
                 "config/scraper.yaml",
                 "config/scraper.yml",
-                os.path.expanduser("~/.sgpt-scraper.yaml"),
+                os.path.expanduser("~/.scrapper.yaml"),
             ]
             for path in candidates:
                 if os.path.isfile(path):

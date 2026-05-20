@@ -6,6 +6,11 @@ Run:  python main.py
 
 Provides a REPL-style interface to search, download, and inspect
 results from all registered source adapters.
+
+Features:
+  - Tab completion for commands, sources, and flags
+  - Arrow key navigation through command history
+  - Auto-suggestions from previous commands
 """
 
 from __future__ import annotations
@@ -13,6 +18,11 @@ from __future__ import annotations
 import os
 import sys
 from typing import Optional
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import FileHistory
 
 from scrapper import SongScraper
 from scrapper.models import AudioFormat, SearchResult
@@ -72,6 +82,77 @@ def _print_info(text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tab completer
+# ---------------------------------------------------------------------------
+
+
+class ScrapperCompleter(Completer):
+    """Provides tab completion for the scrapper interactive shell."""
+
+    COMMANDS = [
+        "search", "s",
+        "list", "l",
+        "download", "dl",
+        "download-all", "dla",
+        "sources",
+        "config",
+        "stats",
+        "clear", "cls",
+        "help", "h",
+        "quit", "q", "exit",
+    ]
+
+    FLAGS = ["--artist", "-a", "--sources", "-src"]
+
+    SOURCES = [
+        "youtube", "spotify", "audiomack",
+        "apple_music", "midi_db",
+    ]
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor.lstrip()
+        word = document.get_word_before_cursor()
+
+        if not text:
+            # Empty line — complete commands
+            for cmd in self.COMMANDS:
+                yield Completion(cmd, start_position=0)
+            return
+
+        parts = text.split()
+        current = parts[-1] if parts else ""
+
+        # If we just typed a flag, complete with sources
+        if current in ("--sources", "-src") or (
+            len(parts) >= 2 and parts[-2] in ("--sources", "-src")
+        ):
+            for src in self.SOURCES:
+                if src.startswith(word):
+                    yield Completion(src, start_position=-len(word))
+            return
+
+        # If we just typed --artist or -a, no completion needed (free text)
+        if current in ("--artist", "-a") or (
+            len(parts) >= 2 and parts[-2] in ("--artist", "-a")
+        ):
+            return
+
+        # Complete commands at the start
+        if len(parts) == 1 and text == current:
+            for cmd in self.COMMANDS:
+                if cmd.startswith(word):
+                    yield Completion(cmd, start_position=-len(word))
+            return
+
+        # After a command, suggest flags
+        if len(parts) >= 2:
+            used_flags = {p for p in parts[1:] if p.startswith("-")}
+            for flag in self.FLAGS:
+                if flag not in used_flags and flag.startswith(word):
+                    yield Completion(flag, start_position=-len(word))
+
+
+# ---------------------------------------------------------------------------
 # Interactive Shell
 # ---------------------------------------------------------------------------
 
@@ -83,6 +164,16 @@ class InteractiveShell:
         self.scraper = SongScraper()
         self.results: list[SearchResult] = []
         self.last_query: str = ""
+
+        # Prompt session with history, completion, and auto-suggest
+        history_path = os.path.expanduser("~/.scrapper_history")
+        self.session = PromptSession(
+            history=FileHistory(history_path),
+            completer=ScrapperCompleter(),
+            auto_suggest=AutoSuggestFromHistory(),
+            message=f"\n{BOLD}scrapper>{RESET} ",
+        )
+
         self._show_help()
 
     # ------------------------------------------------------------------
@@ -92,7 +183,7 @@ class InteractiveShell:
     def run(self) -> None:
         while True:
             try:
-                cmd = input(f"\n{BOLD}scrapper>{RESET} ").strip()
+                cmd = self.session.prompt().strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -164,7 +255,6 @@ class InteractiveShell:
             if sep in args:
                 parts = args.split(sep, 1)
                 song = parts[0].strip()
-                # Check if there's a --sources after the artist value
                 remainder = parts[1].strip()
                 if " --sources " in remainder:
                     artist, src_part = remainder.split(" --sources ", 1)
@@ -379,6 +469,8 @@ class InteractiveShell:
             f"  {BOLD}clear{RESET}    {DIM}Clear the terminal{RESET}\n"
             f"  {BOLD}help{RESET}     {DIM}Show this help{RESET}\n"
             f"  {BOLD}quit{RESET}     {DIM}Exit{RESET}\n"
+            f"\n"
+            f"  {DIM}Tab completion / ↑↓ history / gray auto-suggestions{RESET}\n"
             f"\n"
             f"  {DIM}Examples:{RESET}\n"
             f"    {DIM}search Bohemian Rhapsody --artist Queen{RESET}\n"

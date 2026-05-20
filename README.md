@@ -33,11 +33,15 @@ pip install -e ".[spotify]"
 pip install -e ".[all]"
 ```
 
-### Interactive Shell (Testing)
+### Interactive Shell (TUI)
 
-For quick testing without typing full CLI commands:
+Launch the interactive shell with tab completion, history navigation, and a settings menu:
 
 ```bash
+# Via the installed CLI (recommended)
+scrapper shell
+
+# Or via the standalone script
 python main.py
 ```
 

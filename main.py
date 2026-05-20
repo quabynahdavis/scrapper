@@ -18,7 +18,7 @@ from scrapper import SongScraper
 from scrapper.models import AudioFormat, SearchResult
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Terminal colors
 # ---------------------------------------------------------------------------
 
 RESET = "\033[0m"
@@ -29,6 +29,11 @@ YELLOW = "\033[93m"
 CYAN = "\033[96m"
 RED = "\033[91m"
 MAGENTA = "\033[95m"
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _fmt_duration(seconds: int) -> str:
@@ -144,28 +149,54 @@ class InteractiveShell:
         self._show_help()
 
     def _cmd_search(self, args: str) -> None:
-        """search <song> [--artist <name>]"""
+        """search <song> [--artist <name>] [--sources src1,src2]"""
         if not args:
-            _print_error("Usage: search <song> [--artist <name>]")
+            _print_error(
+                "Usage: search <song> [--artist <name>] [--sources src1,src2]")
             return
 
-        # Parse optional --artist flag
         song = args
         artist: Optional[str] = None
-        if " --artist " in args or " -a " in args:
-            for sep in (" --artist ", " -a "):
-                if sep in args:
-                    parts = args.split(sep, 1)
+        sources: Optional[list[str]] = None
+
+        # Parse --artist flag
+        for sep in (" --artist ", " -a "):
+            if sep in args:
+                parts = args.split(sep, 1)
+                song = parts[0].strip()
+                # Check if there's a --sources after the artist value
+                remainder = parts[1].strip()
+                if " --sources " in remainder:
+                    artist, src_part = remainder.split(" --sources ", 1)
+                    sources = [s.strip() for s in src_part.split(",")]
+                elif " -src " in remainder:
+                    artist, src_part = remainder.split(" -src ", 1)
+                    sources = [s.strip() for s in src_part.split(",")]
+                else:
+                    artist = remainder
+                break
+
+        # Parse --sources flag (if --artist wasn't found)
+        if sources is None:
+            for sep in (" --sources ", " -src "):
+                if sep in song:
+                    parts = song.split(sep, 1)
                     song = parts[0].strip()
-                    artist = parts[1].strip() if len(parts) > 1 else None
+                    sources = [s.strip() for s in parts[1].split(",")]
                     break
 
         self.last_query = f"{song} ({artist or 'any artist'})"
+        src_str = f" [{', '.join(sources)}]" if sources else ""
 
-        _print_header(f"🔍 Searching: {song}" +
-                      (f" by {artist}" if artist else ""))
+        _print_header(
+            f"🔍 Searching: {song}"
+            + (f" by {artist}" if artist else "")
+            + src_str
+        )
 
-        self.results = self.scraper.search(song, artist=artist)
+        self.results = self.scraper.search(
+            song, artist=artist, sources=sources
+        )
 
         if not self.results:
             _print_info("No results found.")
@@ -217,9 +248,7 @@ class InteractiveShell:
 
         idx = int(args.strip()) - 1
         if idx < 0 or idx >= len(self.results):
-            _print_error(
-                f"Index out of range. Use 1–{len(self.results)}."
-            )
+            _print_error(f"Index out of range. Use 1–{len(self.results)}.")
             return
 
         result = self.results[idx]
@@ -241,9 +270,7 @@ class InteractiveShell:
             _print_info("No cached results. Run 'search' first.")
             return
 
-        _print_header(
-            f"⬇️  Downloading all {len(self.results)} results"
-        )
+        _print_header(f"⬇️  Downloading all {len(self.results)} results")
 
         dl_results = self.scraper.download_all(self.results)
 
@@ -265,10 +292,7 @@ class InteractiveShell:
 
         adapters = self.scraper.registry.get_by_priority()
         for a in adapters:
-            print(
-                f"  {BOLD}{a.name:^12}{RESET}  "
-                f"priority: {a.priority}"
-            )
+            print(f"  {BOLD}{a.name:^12}{RESET}  priority: {a.priority}")
 
     def _cmd_config(self, _: str = "") -> None:
         """Show current configuration."""
@@ -333,8 +357,10 @@ class InteractiveShell:
 
         print(
             f"  {BOLD}search <song> [--artist <name>]{RESET}\n"
-            f"    {'':>4}{DIM}Search for a song across all sources{RESET}\n"
-            f"  {BOLD}s{RESET}       {DIM}alias for search{RESET}\n"
+            f"    {'':>4}{DIM}Search across all sources (or filter with --sources){RESET}\n"
+            f"\n"
+            f"  {BOLD}s <song> [-a name] [-src youtube,spotify]{RESET}\n"
+            f"    {'':>4}{DIM}Short form: search with optional artist and source filter{RESET}\n"
             f"\n"
             f"  {BOLD}list{RESET}    {DIM}Show cached results from last search{RESET}\n"
             f"  {BOLD}l{RESET}       {DIM}alias for list{RESET}\n"
@@ -344,21 +370,26 @@ class InteractiveShell:
             f"  {BOLD}dl{RESET}      {DIM}alias for download{RESET}\n"
             f"\n"
             f"  {BOLD}download-all{RESET}\n"
-            f"    {'':>4}{DIM}Download all cached results{RESET}\n"
+            f"    {'':>4}{DIM}Download all cached results concurrently{RESET}\n"
             f"  {BOLD}dla{RESET}     {DIM}alias for download-all{RESET}\n"
             f"\n"
-            f"  {BOLD}sources{RESET}  {DIM}List registered sources with priorities{RESET}\n"
+            f"  {BOLD}sources{RESET}  {DIM}List all registered source adapters{RESET}\n"
             f"  {BOLD}config{RESET}   {DIM}Show current configuration{RESET}\n"
-            f"  {BOLD}stats{RESET}    {DIM}Show statistics from last search{RESET}\n"
+            f"  {BOLD}stats{RESET}    {DIM}Show per-source/per-format breakdown{RESET}\n"
             f"  {BOLD}clear{RESET}    {DIM}Clear the terminal{RESET}\n"
             f"  {BOLD}help{RESET}     {DIM}Show this help{RESET}\n"
-            f"  {BOLD}quit{RESET}     {DIM}Exit{RESET}"
+            f"  {BOLD}quit{RESET}     {DIM}Exit{RESET}\n"
+            f"\n"
+            f"  {DIM}Examples:{RESET}\n"
+            f"    {DIM}search Bohemian Rhapsody --artist Queen{RESET}\n"
+            f"    {DIM}s Song -a Artist -src youtube,apple_music{RESET}\n"
         )
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     shell = InteractiveShell()

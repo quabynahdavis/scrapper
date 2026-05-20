@@ -87,16 +87,15 @@ class YouTubeSource(SourceAdapter):
         song: str,
         artist: Optional[str] = None,
     ) -> list[SearchResult]:
-        query = f"{song} {artist}".strip() if artist else song
+        query = f"ytsearch10:{song} {artist}".strip() if artist else f"ytsearch10:{song}"
 
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
             "extract_flat": True,  # only metadata, no download
-            "default_search": "ytsearch10",
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
             try:
                 info = ydl.extract_info(query, download=False)
             except Exception as exc:
@@ -166,7 +165,7 @@ class YouTubeSource(SourceAdapter):
         }
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
                 ydl.download([result.url])
         except Exception as exc:
             logger.error("YouTube download failed for '%s': %s",

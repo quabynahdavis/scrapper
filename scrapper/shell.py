@@ -129,6 +129,7 @@ class ScrapperCompleter(Completer):
         "list", "l",
         "download", "dl",
         "download-all", "dla",
+        "download-best", "dlb",
         "settings",
         "sources",
         "config",
@@ -200,6 +201,7 @@ class InteractiveShell:
         self.scraper = SongScraper()
         self.results: list[SearchResult] = []
         self.last_query: str = ""
+        self._playlist: list[tuple[str, str | None]] = []
 
         self.session = PromptSession(
             history=FileHistory(HISTORY_FILE),
@@ -251,6 +253,8 @@ class InteractiveShell:
             "dl": self._cmd_download,
             "download-all": self._cmd_download_all,
             "dla": self._cmd_download_all,
+            "download-best": self._cmd_download_best,
+            "dlb": self._cmd_download_best,
             "settings": self._cmd_settings,
             "sources": self._cmd_sources,
             "config": self._cmd_config,
@@ -286,16 +290,97 @@ class InteractiveShell:
     def _cmd_help(self, _: str = "") -> None:
         self._show_help()
 
+    @staticmethod
+    def _parse_song_file(filepath: str) -> list[tuple[str, str | None]]:
+        """Parse a CSV song file into (title, artist) tuples."""
+        playlist: list[tuple[str, str | None]] = []
+        with open(filepath, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.lower().startswith("title,"):
+                    continue
+                if "," in line:
+                    parts = line.split(",", 1)
+                    title = parts[0].strip()
+                    artist = parts[1].strip() if parts[1].strip() else None
+                else:
+                    title = line
+                    artist = None
+                if title:
+                    playlist.append((title, artist))
+        return playlist
+
     def _cmd_search(self, args: str) -> None:
         if not args:
             _print_error(
-                "Usage: search <song> [--artist <name>] [--sources src1,src2]"
+                "Usage: search <song> [--artist <name>] "
+                "[--sources src1,src2] [--file path] [--append]"
             )
             return
 
+        # Check for --append flag
+        append = False
+        if " --append" in args or " -ap" in args:
+            append = True
+            for sep in (" --append", " -ap"):
+                args = args.replace(sep, "").strip()
+
+        # Check for --file flag (batch search from CSV)
+        filepath: Optional[str] = None
+        for sep in (" --file ", " -f "):
+            if sep in args:
+                parts = args.split(sep, 1)
+                args = parts[0].strip()
+                filepath = parts[1].strip().split(
+                )[0] if parts[1].strip() else None
+                break
+
+        if filepath:
+            # Batch search from file
+            if not os.path.isfile(filepath):
+                _print_error(f"File not found: {filepath}")
+                return
+            playlist = self._parse_song_file(filepath)
+            if not playlist:
+                _print_error(f"No songs found in {filepath}")
+                return
+
+            _print_header(f"🔍 Searching {len(playlist)} songs from {filepath}")
+
+            result_map = self.scraper.batch_search(playlist)
+            # Flatten results into self.results
+            new_results: list[SearchResult] = []
+            for (song, artist), results in result_map.items():
+                new_results.extend(results)
+                count = len(results)
+                artist_str = f" by {artist}" if artist else ""
+                print(f"  {song}{artist_str}: {count} result(s)")
+
+            self._playlist = playlist
+
+            if append and self.results:
+                # Merge old + new
+                seen = {r.url for r in new_results}
+                for r in self.results:
+                    if r.url not in seen:
+                        new_results.append(r)
+                new_results.sort(key=lambda x: x.score, reverse=True)
+
+            self.results = new_results
+            total = len(self.results)
+            _print_success(
+                f"Found {total} result(s)"
+                + (f" (appended)" if append else "")
+            )
+            return
+
+        # Single song search (existing behavior)
         song = args
         artist: Optional[str] = None
         sources: Optional[list[str]] = None
+        old_results: list[SearchResult] = list(self.results) if append else []
 
         for sep in (" --artist ", " -a "):
             if sep in args:
@@ -329,15 +414,29 @@ class InteractiveShell:
             + src_str
         )
 
-        self.results = self.scraper.search(
+        new_results = self.scraper.search(
             song, artist=artist, sources=sources
         )
+
+        if append and old_results:
+            seen = {r.url for r in new_results}
+            for r in old_results:
+                if r.url not in seen:
+                    new_results.append(r)
+            new_results.sort(key=lambda x: x.score, reverse=True)
+
+        self.results = new_results
+        self._playlist = [(song, artist)]
 
         if not self.results:
             _print_info("No results found.")
             return
 
-        _print_success(f"Found {len(self.results)} result(s)\n")
+        _print_success(
+            f"Found {len(self.results)} result(s)"
+            + (f" (appended)" if append else "")
+            + "\n"
+        )
 
         for i, r in enumerate(self.results, 1):
             dur = _fmt_duration(r.duration)
@@ -453,6 +552,20 @@ class InteractiveShell:
             return
         _print_header(f"⬇️  Downloading all {len(self.results)} results")
         dl_results = self.scraper.download_all(self.results)
+        self._report_downloads(dl_results)
+
+    def _cmd_download_best(self, _: str = "") -> None:
+        """Download best match for each song in the playlist."""
+        if not self._playlist:
+            _print_info(
+                "No playlist. Run 'search' or 's -f file.csv' first."
+            )
+            return
+
+        _print_header(
+            f"⬇️  Downloading best match for {len(self._playlist)} song(s)"
+        )
+        dl_results = self.scraper.batch_download(self._playlist)
         self._report_downloads(dl_results)
 
     def _cmd_settings(self, _: str = "") -> None:
@@ -605,14 +718,16 @@ class InteractiveShell:
         _print_header("🎵 Scrapper Interactive Shell")
         print(
             f"  {BOLD}search <song> [--artist <name>]{RESET}\n"
-            f"    {'':>4}{DIM}Search across all sources{RESET}\n"
+            f"    {'':>4}{DIM}Search; add --append to add to existing results{RESET}\n"
             f"\n"
-            f"  {BOLD}s <song> [-a name] [-src yt,spotify]{RESET}\n"
-            f"    {'':>4}{DIM}Short form with source filter{RESET}\n"
+            f"  {BOLD}s -f <file.csv>{RESET}\n"
+            f"    {'':>4}{DIM}Batch search from CSV file (title,artist per line){RESET}\n"
             f"\n"
-            f"  {BOLD}list{RESET}     {DIM}Show cached results{RESET}\n"
-            f"  {BOLD}download <n>{RESET}  {DIM}dl 1  |  dl 1,2,3  |  dl 1-5  |  dl 1,3,5-7{RESET}\n"
+            f"  {BOLD}list{RESET}       {DIM}Show cached results{RESET}\n"
+            f"  {BOLD}download <n>{RESET}  {DIM}dl 1 | dl 1,2,3 | dl 1-5{RESET}\n"
             f"  {BOLD}download-all{RESET}  {DIM}Download all cached results{RESET}\n"
+            f"  {BOLD}download-best{RESET} {DIM}Best match per song in playlist{RESET}\n"
+            f"  {BOLD}dlb{RESET}         {DIM}Short for download-best{RESET}\n"
             f"  {BOLD}settings{RESET}  {DIM}Open settings editor{RESET}\n"
             f"  {BOLD}sources{RESET}   {DIM}List sources{RESET}\n"
             f"  {BOLD}config{RESET}    {DIM}Show configuration{RESET}\n"

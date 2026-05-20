@@ -1,0 +1,39 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=77.0.3", "wheel"]
+
+[project]
+authors = [
+  {name = "Quabynah Davis", email = "exceldavisville@gmail.com"},
+]
+description = "Song audio scraper — fetch MP3, MIDI, and audio files from multiple sources"
+license = {text = "Proprietary - All Rights Reserved"}
+name = "scrapper"
+readme = "README.md"
+version = "0.1.0"
+
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "yt-dlp>=2024.12.0",
+  "httpx>=0.28.0",
+  "beautifulsoup4>=4.12.0",
+  "click>=8.1.0",
+  "pyyaml>=6.0",
+  "python-dotenv>=1.0.0",
+]
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+all = ["scrapper[spotify]"]
+spotify = ["spotipy>=2.24.0"]
+
+[project.scripts]
+scrapper = "scrapper.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+package-dir = {"" = "."}
+packages = ["scrapper", "scrapper.sources"]

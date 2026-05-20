@@ -1,0 +1,41 @@
+# Documentation — not committed to repo
+docs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data
+data/raw/
+data/processed/
+data/recordings/
+
+# Logs
+logs/
+*.log
+
+# Models
+models/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+

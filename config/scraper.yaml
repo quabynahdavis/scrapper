@@ -1,0 +1,51 @@
+# Default configuration for sgpt-identifier scraper module
+# Paths are relative to the project root.
+
+scraper:
+  # ------------------------------------------------------------------
+  # Source adapters — enabled/disable, priority, rate limits
+  # ------------------------------------------------------------------
+  sources:
+    youtube:
+      enabled: true
+      priority: 100
+      rate_limit: 1.0 # seconds between requests
+
+    spotify:
+      enabled: true
+      priority: 90
+      rate_limit: 0.5
+      # Requires environment variables:
+      #   SPOTIFY_CLIENT_ID
+      #   SPOTIFY_CLIENT_SECRET
+
+    audiomack:
+      enabled: true
+      priority: 85
+      rate_limit: 2.0
+
+    apple_music:
+      enabled: true
+      priority: 80
+      rate_limit: 0.5
+
+    midi_db:
+      enabled: true
+      priority: 70
+      rate_limit: 3.0
+
+  # ------------------------------------------------------------------
+  # Download manager settings
+  # ------------------------------------------------------------------
+  download:
+    max_concurrent: 3 # max simultaneous downloads
+    max_retries: 3 # retries per file before giving up
+    timeout: 60 # per-file timeout (seconds)
+    directory: ./data/raw # root download directory
+
+  # ------------------------------------------------------------------
+  # HTTP client settings (used by source adapters)
+  # ------------------------------------------------------------------
+  user_agent: >-
+    Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36
+    (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36

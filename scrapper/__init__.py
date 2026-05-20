@@ -239,7 +239,8 @@ class SongScraper:
             candidates = [
                 "config/scraper.yaml",
                 "config/scraper.yml",
-                os.path.expanduser("~/.scrapper.yaml"),
+                os.path.expanduser("~/.config/scrapper/config.yaml"),
+                os.path.expanduser("~/.config/scrapper/config.yml"),
             ]
             for path in candidates:
                 if os.path.isfile(path):

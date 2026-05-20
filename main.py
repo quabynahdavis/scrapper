@@ -11,6 +11,7 @@ Features:
   - Tab completion for commands, sources, and flags
   - Arrow key navigation through command history
   - Auto-suggestions from previous commands
+  - Settings menu for configuration (Spotify keys, download dir, etc.)
 """
 
 from __future__ import annotations
@@ -21,14 +22,48 @@ from typing import Optional
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import Completer, Completion, PathCompleter
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
+import yaml
 
 from scrapper import SongScraper
 from scrapper.models import AudioFormat, SearchResult
 
 # ---------------------------------------------------------------------------
-# Terminal colors
+# Paths
+# ---------------------------------------------------------------------------
+
+CONFIG_DIR = os.path.expanduser("~/.config/scrapper")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.yaml")
+HISTORY_FILE = os.path.join(CONFIG_DIR, "history")
+
+
+def _ensure_config_dir() -> None:
+    """Create ~/.config/scrapper/ if it doesn't exist."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+
+
+def _load_user_config() -> dict:
+    """Load user settings from ~/.config/scrapper/config.yaml."""
+    if os.path.isfile(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            pass
+    return {}
+
+
+def _save_user_config(config: dict) -> None:
+    """Save user settings to ~/.config/scrapper/config.yaml."""
+    _ensure_config_dir()
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+
+
+# ---------------------------------------------------------------------------
+# Terminal colors (only for print output, NOT for prompt_toolkit message)
 # ---------------------------------------------------------------------------
 
 RESET = "\033[0m"
@@ -81,6 +116,15 @@ def _print_info(text: str) -> None:
     print(f"{YELLOW}ℹ️  {text}{RESET}")
 
 
+def _mask(value: str, visible: int = 4) -> str:
+    """Mask a secret value, showing only the last N chars."""
+    if not value:
+        return "(not set)"
+    if len(value) <= visible:
+        return "*" * len(value)
+    return "*" * (len(value) - visible) + value[-visible:]
+
+
 # ---------------------------------------------------------------------------
 # Tab completer
 # ---------------------------------------------------------------------------
@@ -94,6 +138,7 @@ class ScrapperCompleter(Completer):
         "list", "l",
         "download", "dl",
         "download-all", "dla",
+        "settings",
         "sources",
         "config",
         "stats",
@@ -114,7 +159,6 @@ class ScrapperCompleter(Completer):
         word = document.get_word_before_cursor()
 
         if not text:
-            # Empty line — complete commands
             for cmd in self.COMMANDS:
                 yield Completion(cmd, start_position=0)
             return
@@ -122,7 +166,7 @@ class ScrapperCompleter(Completer):
         parts = text.split()
         current = parts[-1] if parts else ""
 
-        # If we just typed a flag, complete with sources
+        # Complete source names after --sources / -src
         if current in ("--sources", "-src") or (
             len(parts) >= 2 and parts[-2] in ("--sources", "-src")
         ):
@@ -131,20 +175,20 @@ class ScrapperCompleter(Completer):
                     yield Completion(src, start_position=-len(word))
             return
 
-        # If we just typed --artist or -a, no completion needed (free text)
+        # No completion after --artist / -a (free text)
         if current in ("--artist", "-a") or (
             len(parts) >= 2 and parts[-2] in ("--artist", "-a")
         ):
             return
 
-        # Complete commands at the start
+        # Complete commands
         if len(parts) == 1 and text == current:
             for cmd in self.COMMANDS:
                 if cmd.startswith(word):
                     yield Completion(cmd, start_position=-len(word))
             return
 
-        # After a command, suggest flags
+        # Complete flags after a command
         if len(parts) >= 2:
             used_flags = {p for p in parts[1:] if p.startswith("-")}
             for flag in self.FLAGS:
@@ -161,17 +205,21 @@ class InteractiveShell:
     """REPL for testing the scrapper framework interactively."""
 
     def __init__(self) -> None:
+        _ensure_config_dir()
+
+        self.user_config = _load_user_config()
+        self._apply_env_overrides()
+
         self.scraper = SongScraper()
         self.results: list[SearchResult] = []
         self.last_query: str = ""
 
         # Prompt session with history, completion, and auto-suggest
-        history_path = os.path.expanduser("~/.scrapper_history")
         self.session = PromptSession(
-            history=FileHistory(history_path),
+            history=FileHistory(HISTORY_FILE),
             completer=ScrapperCompleter(),
             auto_suggest=AutoSuggestFromHistory(),
-            message=f"\n{BOLD}scrapper>{RESET} ",
+            message=FormattedText([("", "\n"), ("bold", "scrapper> ")]),
         )
 
         self._show_help()
@@ -221,6 +269,7 @@ class InteractiveShell:
             "dl": self._cmd_download,
             "download-all": self._cmd_download_all,
             "dla": self._cmd_download_all,
+            "settings": self._cmd_settings,
             "sources": self._cmd_sources,
             "config": self._cmd_config,
             "clear": self._cmd_clear,
@@ -233,6 +282,24 @@ class InteractiveShell:
         return handlers.get(action)
 
     # ------------------------------------------------------------------
+    # Configuration helpers
+    # ------------------------------------------------------------------
+
+    def _apply_env_overrides(self) -> None:
+        """Set environment variables from user config so sources can use them."""
+        spotify = self.user_config.get("spotify", {})
+        if spotify.get("client_id"):
+            os.environ.setdefault("SPOTIFY_CLIENT_ID", spotify["client_id"])
+        if spotify.get("client_secret"):
+            os.environ.setdefault(
+                "SPOTIFY_CLIENT_SECRET", spotify["client_secret"]
+            )
+
+    def _reload_scraper(self) -> None:
+        """Re-initialize the scraper with current user config."""
+        self.scraper = SongScraper()
+
+    # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
 
@@ -243,7 +310,8 @@ class InteractiveShell:
         """search <song> [--artist <name>] [--sources src1,src2]"""
         if not args:
             _print_error(
-                "Usage: search <song> [--artist <name>] [--sources src1,src2]")
+                "Usage: search <song> [--artist <name>] [--sources src1,src2]"
+            )
             return
 
         song = args
@@ -338,7 +406,9 @@ class InteractiveShell:
 
         idx = int(args.strip()) - 1
         if idx < 0 or idx >= len(self.results):
-            _print_error(f"Index out of range. Use 1–{len(self.results)}.")
+            _print_error(
+                f"Index out of range. Use 1–{len(self.results)}."
+            )
             return
 
         result = self.results[idx]
@@ -352,7 +422,9 @@ class InteractiveShell:
         if dl.success:
             _print_success(f"Saved to: {dl.file_path}")
         else:
-            _print_error(f"Download failed: {dl.error or 'Unknown error'}")
+            _print_error(
+                f"Download failed: {dl.error or 'Unknown error'}"
+            )
 
     def _cmd_download_all(self, _: str = "") -> None:
         """Download all cached results."""
@@ -360,7 +432,9 @@ class InteractiveShell:
             _print_info("No cached results. Run 'search' first.")
             return
 
-        _print_header(f"⬇️  Downloading all {len(self.results)} results")
+        _print_header(
+            f"⬇️  Downloading all {len(self.results)} results"
+        )
 
         dl_results = self.scraper.download_all(self.results)
 
@@ -369,12 +443,126 @@ class InteractiveShell:
 
         for d in dl_results:
             if d.success:
-                print(f"  {GREEN}✅{RESET} {d.result.title}: {d.file_path}")
+                print(
+                    f"  {GREEN}✅{RESET} {d.result.title}: {d.file_path}"
+                )
             else:
-                print(f"  {RED}❌{RESET} {d.result.title}: {d.error}")
+                print(
+                    f"  {RED}❌{RESET} {d.result.title}: {d.error}"
+                )
 
         print()
         _print_success(f"{success} downloaded, {failed} failed")
+
+    def _cmd_settings(self, _: str = "") -> None:
+        """Open the interactive settings editor."""
+        config = _load_user_config()
+
+        # Ensure default structure
+        spotify = config.setdefault("spotify", {})
+        download = config.setdefault("download", {})
+
+        while True:
+            _print_header("⚙️  Settings")
+
+            print(
+                f"  {BOLD}1.{RESET} Spotify Client ID     : "
+                f"{_mask(spotify.get('client_id', ''))}\n"
+                f"  {BOLD}2.{RESET} Spotify Client Secret : "
+                f"{_mask(spotify.get('client_secret', ''))}\n"
+                f"  {BOLD}3.{RESET} Download Directory    : "
+                f"{download.get('directory', './data/raw')}\n"
+                f"  {BOLD}4.{RESET} Max Concurrent        : "
+                f"{download.get('max_concurrent', 3)}\n"
+                f"  {BOLD}5.{RESET} Max Retries           : "
+                f"{download.get('max_retries', 3)}\n"
+                f"  {BOLD}6.{RESET} Timeout (seconds)     : "
+                f"{download.get('timeout', 60)}\n"
+                f"\n"
+                f"  {DIM}Enter number to edit, 's' to save, 'q' to quit{RESET}\n"
+            )
+
+            choice = self.session.prompt("  choice> ").strip().lower()
+
+            if choice == "q":
+                break
+            if choice == "s":
+                _save_user_config(config)
+                # Re-apply env vars and reload scraper
+                self.user_config = config
+                self._apply_env_overrides()
+                self._reload_scraper()
+                _print_success("Settings saved")
+                break
+
+            if choice == "1":
+                val = self.session.prompt(
+                    "  Spotify Client ID: ",
+                    default=spotify.get("client_id", ""),
+                ).strip()
+                spotify["client_id"] = val
+
+            elif choice == "2":
+                val = self.session.prompt(
+                    "  Spotify Client Secret: ",
+                    default=spotify.get("client_secret", ""),
+                ).strip()
+                spotify["client_secret"] = val
+
+            elif choice == "3":
+                val = self.session.prompt(
+                    "  Download Directory (Tab to autocomplete): ",
+                    default=download.get("directory", "./data/raw"),
+                    completer=PathCompleter(),
+                ).strip()
+                download["directory"] = os.path.abspath(
+                    os.path.expanduser(val)
+                )
+
+            elif choice == "4":
+                try:
+                    val = int(
+                        self.session.prompt(
+                            "  Max Concurrent: ",
+                            default=str(
+                                download.get("max_concurrent", 3)
+                            ),
+                        ).strip()
+                    )
+                    download["max_concurrent"] = max(1, val)
+                except ValueError:
+                    _print_error("Enter a valid number")
+
+            elif choice == "5":
+                try:
+                    val = int(
+                        self.session.prompt(
+                            "  Max Retries: ",
+                            default=str(
+                                download.get("max_retries", 3)
+                            ),
+                        ).strip()
+                    )
+                    download["max_retries"] = max(0, val)
+                except ValueError:
+                    _print_error("Enter a valid number")
+
+            elif choice == "6":
+                try:
+                    val = int(
+                        self.session.prompt(
+                            "  Timeout (seconds): ",
+                            default=str(
+                                download.get("timeout", 60)
+                            ),
+                        ).strip()
+                    )
+                    download["timeout"] = max(5, val)
+                except ValueError:
+                    _print_error("Enter a valid number")
+
+            else:
+                _print_error(f"Invalid choice: '{choice}'")
 
     def _cmd_sources(self, _: str = "") -> None:
         """List registered sources with their priority and status."""
@@ -382,7 +570,9 @@ class InteractiveShell:
 
         adapters = self.scraper.registry.get_by_priority()
         for a in adapters:
-            print(f"  {BOLD}{a.name:^12}{RESET}  priority: {a.priority}")
+            print(
+                f"  {BOLD}{a.name:^12}{RESET}  priority: {a.priority}"
+            )
 
     def _cmd_config(self, _: str = "") -> None:
         """Show current configuration."""
@@ -395,15 +585,25 @@ class InteractiveShell:
         print(f"  {BOLD}Sources:{RESET}")
         for name, cfg in sources.items():
             enabled = cfg.get("enabled", True)
-            status = f"{GREEN}enabled{RESET}" if enabled else f"{RED}disabled{RESET}"
+            status = (
+                f"{GREEN}enabled{RESET}"
+                if enabled
+                else f"{RED}disabled{RESET}"
+            )
             rl = cfg.get("rate_limit", "—")
             print(f"    {name:<12} {status}  rate_limit: {rl}s")
 
         print(f"\n  {BOLD}Download:{RESET}")
-        print(f"    max_concurrent: {download.get('max_concurrent', 3)}")
-        print(f"    max_retries:    {download.get('max_retries', 3)}")
+        print(
+            f"    max_concurrent: {download.get('max_concurrent', 3)}"
+        )
+        print(
+            f"    max_retries:    {download.get('max_retries', 3)}"
+        )
         print(f"    timeout:        {download.get('timeout', 60)}s")
-        print(f"    directory:      {download.get('directory', './data/raw')}")
+        print(
+            f"    directory:      {download.get('directory', './data/raw')}"
+        )
 
     def _cmd_clear(self, _: str = "") -> None:
         """Clear the terminal."""
@@ -421,15 +621,21 @@ class InteractiveShell:
         by_format: dict[str, int] = {}
         for r in self.results:
             by_source[r.source] = by_source.get(r.source, 0) + 1
-            by_format[r.format.value] = by_format.get(r.format.value, 0) + 1
+            by_format[r.format.value] = by_format.get(
+                r.format.value, 0
+            ) + 1
 
         print(f"  Query:        {BOLD}{self.last_query}{RESET}")
         print(f"  Total results: {len(self.results)}")
         print(f"\n  {BOLD}By source:{RESET}")
-        for src, count in sorted(by_source.items(), key=lambda x: -x[1]):
+        for src, count in sorted(
+            by_source.items(), key=lambda x: -x[1]
+        ):
             print(f"    {src:<12} {count}")
         print(f"\n  {BOLD}By format:{RESET}")
-        for fmt, count in sorted(by_format.items(), key=lambda x: -x[1]):
+        for fmt, count in sorted(
+            by_format.items(), key=lambda x: -x[1]
+        ):
             print(f"    {fmt:<12} {count}")
 
     def _cmd_quit(self, _: str = "") -> None:
@@ -447,34 +653,24 @@ class InteractiveShell:
 
         print(
             f"  {BOLD}search <song> [--artist <name>]{RESET}\n"
-            f"    {'':>4}{DIM}Search across all sources (or filter with --sources){RESET}\n"
+            f"    {'':>4}{DIM}Search across all sources{RESET}\n"
             f"\n"
-            f"  {BOLD}s <song> [-a name] [-src youtube,spotify]{RESET}\n"
-            f"    {'':>4}{DIM}Short form: search with optional artist and source filter{RESET}\n"
+            f"  {BOLD}s <song> [-a name] [-src yt,spotify]{RESET}\n"
+            f"    {'':>4}{DIM}Short form with source filter{RESET}\n"
             f"\n"
-            f"  {BOLD}list{RESET}    {DIM}Show cached results from last search{RESET}\n"
-            f"  {BOLD}l{RESET}       {DIM}alias for list{RESET}\n"
+            f"  {BOLD}list{RESET}     {DIM}Show cached results{RESET}\n"
+            f"  {BOLD}download <n>{RESET}  {DIM}Download result #n{RESET}\n"
+            f"  {BOLD}download-all{RESET}  {DIM}Download all{RESET}\n"
+            f"  {BOLD}settings{RESET}  {DIM}Open settings editor{RESET}\n"
+            f"  {BOLD}sources{RESET}   {DIM}List sources{RESET}\n"
+            f"  {BOLD}config{RESET}    {DIM}Show configuration{RESET}\n"
+            f"  {BOLD}stats{RESET}     {DIM}Search statistics{RESET}\n"
+            f"  {BOLD}clear{RESET}     {DIM}Clear terminal{RESET}\n"
+            f"  {BOLD}help{RESET}      {DIM}This help{RESET}\n"
+            f"  {BOLD}quit{RESET}      {DIM}Exit{RESET}\n"
             f"\n"
-            f"  {BOLD}download <n>{RESET}\n"
-            f"    {'':>4}{DIM}Download result #n from the cached list{RESET}\n"
-            f"  {BOLD}dl{RESET}      {DIM}alias for download{RESET}\n"
-            f"\n"
-            f"  {BOLD}download-all{RESET}\n"
-            f"    {'':>4}{DIM}Download all cached results concurrently{RESET}\n"
-            f"  {BOLD}dla{RESET}     {DIM}alias for download-all{RESET}\n"
-            f"\n"
-            f"  {BOLD}sources{RESET}  {DIM}List all registered source adapters{RESET}\n"
-            f"  {BOLD}config{RESET}   {DIM}Show current configuration{RESET}\n"
-            f"  {BOLD}stats{RESET}    {DIM}Show per-source/per-format breakdown{RESET}\n"
-            f"  {BOLD}clear{RESET}    {DIM}Clear the terminal{RESET}\n"
-            f"  {BOLD}help{RESET}     {DIM}Show this help{RESET}\n"
-            f"  {BOLD}quit{RESET}     {DIM}Exit{RESET}\n"
-            f"\n"
-            f"  {DIM}Tab completion / ↑↓ history / gray auto-suggestions{RESET}\n"
-            f"\n"
-            f"  {DIM}Examples:{RESET}\n"
-            f"    {DIM}search Bohemian Rhapsody --artist Queen{RESET}\n"
-            f"    {DIM}s Song -a Artist -src youtube,apple_music{RESET}\n"
+            f"  {DIM}Tab / ↑↓ / auto-suggest enabled{RESET}\n"
+            f"  {DIM}Config & history: ~/.config/scrapper/{RESET}\n"
         )
 
 

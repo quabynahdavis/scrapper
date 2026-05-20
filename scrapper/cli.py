@@ -10,10 +10,12 @@ Usage:
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from typing import Optional
 
 import click
+import yaml
 
 from . import SongScraper
 from .models import AudioFormat
@@ -177,6 +179,56 @@ def search(
         for d in dl_results:
             if not d.success:
                 click.echo(f"   ❌ {d.result.title} — {d.error}")
+
+
+@cli.command()
+@_verbose_option
+def settings(verbose: bool) -> None:
+    """Show or configure scrapper settings."""
+    _setup_logging(verbose)
+
+    config_dir = os.path.expanduser("~/.config/scrapper")
+    config_file = os.path.join(config_dir, "config.yaml")
+
+    if not os.path.isfile(config_file):
+        click.echo("ℹ️  No user config found at ~/.config/scrapper/config.yaml")
+        click.echo(
+            "   Use the interactive shell's 'settings' command to configure.")
+        return
+
+    try:
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f) or {}
+    except Exception as exc:
+        click.echo(f"❌ Failed to load config: {exc}", err=True)
+        return
+
+    spotify = config.get("spotify", {})
+    download = config.get("download", {})
+
+    click.echo("\n⚙️  Current Settings\n")
+
+    click.echo("  Spotify:")
+    click.echo(
+        f"    Client ID     : {spotify.get('client_id', '(not set)')}"
+    )
+    click.echo(
+        f"    Client Secret : {'****' + spotify['client_secret'][-4:] if spotify.get('client_secret') else '(not set)'}"
+    )
+
+    click.echo("\n  Download:")
+    click.echo(
+        f"    Directory      : {download.get('directory', './data/raw')}"
+    )
+    click.echo(
+        f"    Max Concurrent : {download.get('max_concurrent', 3)}"
+    )
+    click.echo(
+        f"    Max Retries    : {download.get('max_retries', 3)}"
+    )
+    click.echo(
+        f"    Timeout        : {download.get('timeout', 60)}s"
+    )
 
 
 # ---------------------------------------------------------------------------

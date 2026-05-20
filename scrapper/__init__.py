@@ -228,6 +228,111 @@ class SongScraper:
         return organised
 
     # ------------------------------------------------------------------
+    # Batch operations
+    # ------------------------------------------------------------------
+
+    def batch_search(
+        self,
+        playlist: list[tuple[str, Optional[str]]],
+        sources: Optional[list[str]] = None,
+        formats: Optional[list[AudioFormat]] = None,
+    ) -> dict[tuple[str, Optional[str]], list[SearchResult]]:
+        """Search for multiple songs at once.
+
+        Results are grouped per song so you can see what was found
+        for each query.
+
+        Args:
+            playlist: List of (song_title, artist_or_None) tuples.
+            sources: Optional source name filter.
+            formats: Optional format filter.
+
+        Returns:
+            Dict mapping each (title, artist) pair to its SearchResult list,
+            sorted by score descending per song.
+        """
+        result_map: dict[tuple[str, Optional[str]], list[SearchResult]] = {}
+        for song, artist in playlist:
+            key = (song, artist)
+            try:
+                results = self.search(
+                    song, artist=artist, sources=sources, formats=formats,
+                )
+                results.sort(key=lambda r: r.score, reverse=True)
+                result_map[key] = results
+            except Exception as exc:
+                logger.warning("Batch search failed for '%s': %s", song, exc)
+                result_map[key] = []
+        return result_map
+
+    def batch_download(
+        self,
+        playlist: list[tuple[str, Optional[str]]],
+        sources: Optional[list[str]] = None,
+        formats: Optional[list[AudioFormat]] = None,
+        dest_dir: Optional[str] = None,
+    ) -> list[DownloadResult]:
+        """Search and download the best match for each song in a playlist.
+
+        For each (title, artist) pair:
+        1. Search for the song across all sources
+        2. Pick the highest-scored result
+        3. Download it
+
+        Args:
+            playlist: List of (song_title, artist_or_None) tuples.
+            sources: Optional source name filter.
+            formats: Optional format filter.
+            dest_dir: Override the default download directory.
+
+        Returns:
+            One DownloadResult per song in the playlist — the best match.
+        """
+        result_map = self.batch_search(
+            playlist, sources=sources, formats=formats,
+        )
+        downloads: list[DownloadResult] = []
+        for key, results in result_map.items():
+            song, artist = key
+            if not results:
+                downloads.append(
+                    DownloadResult(
+                        result=SearchResult(
+                            title=song,
+                            artist=artist,
+                            duration=0,
+                            format=AudioFormat.MP3,
+                            quality="medium",  # type: ignore[arg-type]
+                            source="",
+                            url="",
+                        ),
+                        file_path="",
+                        success=False,
+                        error=f"No results found for '{song}'",
+                    )
+                )
+                continue
+
+            best = results[0]
+            adapter = self.registry.get(best.source)
+            if not adapter:
+                downloads.append(
+                    DownloadResult(
+                        result=best,
+                        file_path="",
+                        success=False,
+                        error=f"No adapter registered for '{best.source}'",
+                    )
+                )
+                continue
+
+            dest = dest_dir or self.organizer.base_dir
+            dl = self.download_manager.download(best, adapter, dest_dir=dest)
+            downloads.append(self.organizer.organise(dl))
+
+        return downloads
+
+    # ------------------------------------------------------------------
     # Configuration
     # ------------------------------------------------------------------
 

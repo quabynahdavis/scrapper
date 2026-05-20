@@ -7,7 +7,7 @@ authors = [
   {name = "Quabynah Davis", email = "exceldavisville@gmail.com"},
 ]
 description = "Song audio scraper — fetch MP3, MIDI, and audio files from multiple sources"
-license = {text = "Proprietary - All Rights Reserved"}
+license = "LicenseRef-Proprietary"
 name = "scrapper"
 readme = "README.md"
 version = "0.1.0"
@@ -37,4 +37,4 @@ scrapper = "scrapper.cli:main"
 [tool.setuptools]
 include-package-data = true
 package-dir = {"" = "."}
-packages = ["scrapper", "scrapper.sources", "scrapper.shell"]
+packages = ["scrapper", "scrapper.sources"]

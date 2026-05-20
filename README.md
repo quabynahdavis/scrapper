@@ -44,15 +44,42 @@ python main.py
 Then type commands interactively:
 
 ```
-scrapper> s Bohemian Rhapsody -a Queen             ← search all sources
-scrapper> s Bohemian Rhapsody -a Queen -src youtube ← YouTube only
-scrapper> l                                         ← list cached results
-scrapper> dl 1                                      ← download result #1
-scrapper> dla                                       ← download all results
-scrapper> sources                                   ← list registered sources
-scrapper> stats                                     ← per-source breakdown
-scrapper> q                                         ← quit
+scrapper> s Bohemian Rhapsody -a Queen              ← search all sources
+scrapper> s Bohemian Rhapsody -a Queen -src youtube  ← YouTube only
+scrapper> l                                          ← list cached results
+scrapper> dl 1                                       ← download result #1
+scrapper> dla                                        ← download all results
+scrapper> settings                                   ← open settings editor
+scrapper> sources                                    ← list registered sources
+scrapper> stats                                      ← per-source breakdown
+scrapper> Tab                                        ← command completion
+scrapper> ↑ ↓                                        ← history navigation
+scrapper> q                                          ← quit
 ```
+
+### Settings
+
+Configure Spotify API keys, download directory, and performance settings:
+
+```bash
+# Interactive settings editor (recommended)
+python main.py
+scrapper> settings
+
+# Or via CLI
+scrapper settings
+```
+
+The settings menu lets you edit:
+
+- **Spotify Client ID / Secret** — enables the Spotify source (saved to config, takes effect immediately)
+- **Download Directory** — where files are saved (Tab to autocomplete paths)
+- **Max Concurrent** — simultaneous downloads
+- **Max Retries** — download retry attempts
+- **Timeout** — per-file download timeout
+
+Settings are stored at `~/.config/scrapper/config.yaml`.
+Command history is stored at `~/.config/scrapper/history`.
 
 ### CLI Usage
 

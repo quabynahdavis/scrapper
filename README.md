@@ -33,6 +33,27 @@ pip install -e ".[spotify]"
 pip install -e ".[all]"
 ```
 
+### Interactive Shell (Testing)
+
+For quick testing without typing full CLI commands:
+
+```bash
+python main.py
+```
+
+Then type commands interactively:
+
+```
+scrapper> s Bohemian Rhapsody -a Queen             ← search all sources
+scrapper> s Bohemian Rhapsody -a Queen -src youtube ← YouTube only
+scrapper> l                                         ← list cached results
+scrapper> dl 1                                      ← download result #1
+scrapper> dla                                       ← download all results
+scrapper> sources                                   ← list registered sources
+scrapper> stats                                     ← per-source breakdown
+scrapper> q                                         ← quit
+```
+
 ### CLI Usage
 
 ```bash
@@ -42,13 +63,17 @@ scrapper search "Bohemian Rhapsody" --artist "Queen"
 # Search only (list results without downloading)
 scrapper search "Bohemian Rhapsody" --artist "Queen" --search-only
 
+# Filter by specific sources
+scrapper search "Song" --sources youtube,apple_music
+scrapper search "Song" --artist "Artist" --sources youtube,spotify
+
 # Download all results from specific sources
-scrapper search "Bohemian Rhapsody" --sources youtube,spotify --download-all
+scrapper search "Song" --sources youtube --download-all
 
 # Filter by format
 scrapper search "Song Title" --format mp3
 
-# Verbose logging
+# Verbose logging (see debug output)
 scrapper search "Song Title" --artist "Artist" --verbose
 ```
 
@@ -104,13 +129,23 @@ all_downloads = scraper.download_all(results)
 
 ## Source Adapters
 
-| Source      | Priority | Method                 | Formats            | Auth Required |
-| ----------- | -------- | ---------------------- | ------------------ | ------------- |
-| YouTube     | 100      | yt-dlp extraction      | MP3 (via FFmpeg)   | No            |
-| Spotify     | 90       | Web API previews       | MP3 (30s clips)    | API keys      |
-| Audiomack   | 85       | Web scraping           | MP3 (full songs)   | No            |
-| Apple Music | 80       | iTunes Search API      | M4A (30s previews) | No            |
-| MIDI DB     | 70       | Web scraping (3 sites) | MIDI               | No            |
+| Source      | Priority | Method                 | Formats            | Auth Required | Status                  |
+| ----------- | -------- | ---------------------- | ------------------ | ------------- | ----------------------- |
+| YouTube     | 100      | yt-dlp extraction      | MP3 (via FFmpeg)   | No            | 🟢 Working              |
+| Spotify     | 90       | Web API previews       | MP3 (30s clips)    | API keys      | 🟡 Needs env vars       |
+| Audiomack   | 85       | Web scraping           | MP3 (full songs)   | No            | 🔴 JS-rendered SPA      |
+| Apple Music | 80       | iTunes Search API      | M4A (30s previews) | No            | 🟢 Working              |
+| MIDI DB     | 70       | Web scraping (3 sites) | MIDI               | No            | 🔴 Sites changed layout |
+
+### Source Troubleshooting
+
+| Source          | If it returns 0 results…                                   |
+| --------------- | ---------------------------------------------------------- |
+| **YouTube**     | Should work — uses yt-dlp                                  |
+| **Spotify**     | Set `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` env vars |
+| **Audiomack**   | Needs headless browser (Playwright/Selenium) — JS-rendered |
+| **Apple Music** | Should work — free public API                              |
+| **MIDI**        | MIDI sites changed their HTML; scraping code needs updates |
 
 ### Spotify Setup
 

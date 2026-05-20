@@ -1,4 +1,4 @@
-# Default configuration for sgpt-identifier scraper module
+# Default configuration for scrapper module
 # Paths are relative to the project root.
 
 scraper:

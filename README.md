@@ -1,8 +1,4 @@
-# scrapper
-
- Tool for downloading mp3, midi and other audio files of music and podcasts, from several sources 
-=======
-# sgpt-identifier — Song Audio Scraper
+# scrapper — Song Audio Scraper
 
 > **Status**: Pre-Alpha | **License**: Proprietary
 
@@ -41,19 +37,19 @@ pip install -e ".[all]"
 
 ```bash
 # Search and download best result
-sgpt-scrape search "Bohemian Rhapsody" --artist "Queen"
+scrapper search "Bohemian Rhapsody" --artist "Queen"
 
 # Search only (list results without downloading)
-sgpt-scrape search "Bohemian Rhapsody" --artist "Queen" --search-only
+scrapper search "Bohemian Rhapsody" --artist "Queen" --search-only
 
 # Download all results from specific sources
-sgpt-scrape search "Bohemian Rhapsody" --sources youtube,spotify --download-all
+scrapper search "Bohemian Rhapsody" --sources youtube,spotify --download-all
 
 # Filter by format
-sgpt-scrape search "Song Title" --format mp3
+scrapper search "Song Title" --format mp3
 
 # Verbose logging
-sgpt-scrape search "Song Title" --artist "Artist" --verbose
+scrapper search "Song Title" --artist "Artist" --verbose
 ```
 
 ### Python API

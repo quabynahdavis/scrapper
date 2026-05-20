@@ -2,9 +2,9 @@
 CLI entry point for the song scraper.
 
 Usage:
-    sgpt-scrape "Bohemian Rhapsody" --artist "Queen"
-    sgpt-scrape "Song Title" --search-only
-    sgpt-scrape "Song Title" --sources youtube,spotify
+    scrapper "Bohemian Rhapsody" --artist "Queen"
+    scrapper "Song Title" --search-only
+    scrapper "Song Title" --sources youtube,spotify
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ _verbose_option = click.option(
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="sgpt-scrape")
+@click.version_option(version="0.1.0", prog_name="scrapper")
 def cli() -> None:
     """Search and download audio files for a song."""
 

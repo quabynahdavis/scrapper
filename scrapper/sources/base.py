@@ -17,19 +17,15 @@ from ..models import SearchResult, DownloadResult
 
 
 class SourceAdapter(ABC):
-    """Base class for all audio source adapters."""
+    """Base class for all audio source adapters.
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Unique source identifier (e.g. 'youtube', 'spotify')."""
-        ...
+    Subclasses MUST set:
+      name     – unique source identifier (e.g. 'youtube', 'spotify')
+      priority – search order (higher = checked first)
+    """
 
-    @property
-    @abstractmethod
-    def priority(self) -> int:
-        """Search priority — higher values are checked first."""
-        ...
+    name: str = ""
+    priority: int = 0
 
     @abstractmethod
     def search(
